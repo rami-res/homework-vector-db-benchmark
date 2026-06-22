@@ -49,31 +49,20 @@ class QdrantDB(VectorDB):
             ),
         )
 
-        # Upsert points (batch them for efficiency)
-        points = []
-        for doc_id, vector in zip(ids, vectors):
-            points.append(
-                PointStruct(
-                    id=hash(doc_id) & 0x7FFFFFFF,  # Use hash to convert string to positive int
+        # Upload via generator to avoid building large lists in memory
+        def points_generator():
+            for i, (doc_id, vector) in enumerate(zip(ids, vectors)):
+                yield PointStruct(
+                    id=i,  # Use sequential int ID; store original in payload
                     vector=vector.tolist(),
-                    payload={"doc_id": doc_id},  # Store original string ID
+                    payload={"doc_id": doc_id},
                 )
-            )
 
-            # Batch upsert every 1000 points
-            if len(points) >= 1000:
-                self.client.upsert(
-                    collection_name=self.collection_name,
-                    points=points,
-                )
-                points = []
-
-        # Upsert remaining points
-        if points:
-            self.client.upsert(
-                collection_name=self.collection_name,
-                points=points,
-            )
+        self.client.upload_points(
+            collection_name=self.collection_name,
+            points=points_generator(),
+            batch_size=256,
+        )
 
     def search(self, query_vec: np.ndarray, top_k: int = 10) -> List[Tuple[str, float]]:
         """
@@ -85,15 +74,15 @@ class QdrantDB(VectorDB):
         assert query_vec.ndim == 1, "query_vec must be 1D"
 
         # Search in Qdrant
-        results = self.client.search(
+        response = self.client.query_points(
             collection_name=self.collection_name,
-            query_vector=query_vec.tolist(),
+            query=query_vec.tolist(),
             limit=top_k,
         )
 
         # Convert to expected format
         output = []
-        for scored_point in results:
+        for scored_point in response.points:
             doc_id = scored_point.payload["doc_id"]
             score = float(scored_point.score)
             output.append((doc_id, score))
@@ -101,13 +90,11 @@ class QdrantDB(VectorDB):
         return output
 
     def disk_size_mb(self) -> float:
-        """
-        Return estimated collection size in MB.
-        Qdrant running in Docker, so we return 0 for now.
-        """
-        # Since Qdrant is in Docker, we can't easily measure disk size
-        # Return 0 to indicate external storage
-        return 0.0
+        """Estimate collection size in MB from vectors_count * dim * 4 bytes (float32)."""
+        info = self.client.get_collection(self.collection_name)
+        vectors_count = info.points_count or 0
+        dim = self.vector_dim or 0
+        return (vectors_count * dim * 4) / (1024 * 1024)
 
     def cleanup(self) -> None:
         """Delete the collection."""

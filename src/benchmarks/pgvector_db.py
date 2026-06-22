@@ -59,13 +59,12 @@ class PgvectorDB(VectorDB):
         # Drop table if exists
         conn.execute(sql.SQL("DROP TABLE IF EXISTS {}").format(sql.Identifier(self.table_name)))
 
-        # Create table
+        # Create table (dimension must be a literal in DDL, not a parameter)
         conn.execute(
             sql.SQL("CREATE TABLE {} (id TEXT PRIMARY KEY, embedding vector({}))").format(
                 sql.Identifier(self.table_name),
-                sql.Placeholder(),
-            ),
-            (self.vector_dim,),
+                sql.SQL(str(self.vector_dim)),
+            )
         )
 
         # Insert vectors in batches
@@ -80,13 +79,13 @@ class PgvectorDB(VectorDB):
                 for doc_id, vector in zip(batch_ids, batch_vectors)
             ]
 
-            # Use executemany for batch insert
-            conn.executemany(
-                sql.SQL("INSERT INTO {} (id, embedding) VALUES (%s, %s)").format(
-                    sql.Identifier(self.table_name)
-                ),
-                data,
-            )
+            with conn.cursor() as cur:
+                cur.executemany(
+                    sql.SQL("INSERT INTO {} (id, embedding) VALUES (%s, %s)").format(
+                        sql.Identifier(self.table_name)
+                    ),
+                    data,
+                )
 
         # Create HNSW index for faster search
         conn.execute(

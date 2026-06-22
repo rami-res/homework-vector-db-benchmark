@@ -14,7 +14,7 @@ class FAISSHNSw(VectorDB):
         ef_construction: parameter for HNSW construction (higher = more accurate but slower)
         """
         self.output_path = output_path
-        self.index = None
+        self._index = None
         self.id_map = {}
         self.ef_construction = ef_construction
 
@@ -32,20 +32,20 @@ class FAISSHNSw(VectorDB):
         # Create HNSW index wrapped in IndexIDMap
         # HNSW(M=16) is a good balance
         hnsw_index = faiss.IndexHNSWFlat(dim, 16)
-        hnsw_index.ef_construction = self.ef_construction
-        hnsw_index.ef = min(self.ef_construction, 100)  # ef for search
+        hnsw_index.hnsw.efConstruction = self.ef_construction
+        hnsw_index.hnsw.efSearch = min(self.ef_construction, 100)
 
         # Add vectors
         hnsw_index.add(vectors)
 
         # Store in class
-        self.index = hnsw_index
+        self._index = hnsw_index
 
         # Store ID mapping
         self.id_map = {doc_id: idx for idx, doc_id in enumerate(ids)}
 
         # Save to disk
-        faiss.write_index(self.index, self.output_path)
+        faiss.write_index(self._index, self.output_path)
 
     def search(self, query_vec: np.ndarray, top_k: int = 10) -> List[Tuple[str, float]]:
         """
@@ -53,14 +53,14 @@ class FAISSHNSw(VectorDB):
         query_vec: shape (dim,), 1D array
         Returns: [(doc_id, distance), ...] of length top_k
         """
-        assert self.index is not None, "index() must be called first"
+        assert self._index is not None, "index() must be called first"
         assert query_vec.ndim == 1, "query_vec must be 1D"
 
         # Reshape to (1, dim)
         query_batch = query_vec.reshape(1, -1).astype(np.float32)
 
         # Search
-        distances, indices = self.index.search(query_batch, top_k)
+        distances, indices = self._index.search(query_batch, top_k)
 
         # Convert back to doc_ids
         idx_to_id = {v: k for k, v in self.id_map.items()}

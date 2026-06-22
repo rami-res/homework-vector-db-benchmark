@@ -10,7 +10,7 @@ class FAISSFlat(VectorDB):
 
     def __init__(self, output_path: str = "faiss_flat.index"):
         self.output_path = output_path
-        self.index = None
+        self._index = None
         self.id_map = {}  # doc_id -> internal index
 
     def index(self, vectors: np.ndarray, ids: List[str]) -> None:
@@ -25,16 +25,16 @@ class FAISSFlat(VectorDB):
         dim = vectors.shape[1]
 
         # Create Flat index (L2 distance)
-        self.index = faiss.IndexFlatL2(dim)
+        self._index = faiss.IndexFlatL2(dim)
 
         # Add vectors
-        self.index.add(vectors)
+        self._index.add(vectors)
 
         # Store ID mapping
         self.id_map = {doc_id: idx for idx, doc_id in enumerate(ids)}
 
         # Save to disk
-        faiss.write_index(self.index, self.output_path)
+        faiss.write_index(self._index, self.output_path)
 
     def search(self, query_vec: np.ndarray, top_k: int = 10) -> List[Tuple[str, float]]:
         """
@@ -42,14 +42,14 @@ class FAISSFlat(VectorDB):
         query_vec: shape (dim,), 1D array
         Returns: [(doc_id, distance), ...] of length top_k
         """
-        assert self.index is not None, "index() must be called first"
+        assert self._index is not None, "index() must be called first"
         assert query_vec.ndim == 1, "query_vec must be 1D"
 
         # Reshape to (1, dim)
         query_batch = query_vec.reshape(1, -1).astype(np.float32)
 
         # Search
-        distances, indices = self.index.search(query_batch, top_k)
+        distances, indices = self._index.search(query_batch, top_k)
 
         # Convert back to doc_ids
         # Reverse the ID map

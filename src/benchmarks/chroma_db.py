@@ -1,7 +1,6 @@
 import numpy as np
 from typing import List, Tuple
 import chromadb
-from chromadb.config import Settings
 import shutil
 import os
 from .base import VectorDB
@@ -24,14 +23,7 @@ class ChromaDB(VectorDB):
     def _get_client(self):
         """Get or create Chroma client."""
         if self.client is None:
-            # Create settings for persistent storage
-            settings = Settings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory=self.persist_path,
-                anonymized_telemetry=False,
-            )
-            # Initialize client with persistent settings
-            self.client = chromadb.Client(settings)
+            self.client = chromadb.PersistentClient(path=self.persist_path)
         return self.client
 
     def index(self, vectors: np.ndarray, ids: List[str]) -> None:
